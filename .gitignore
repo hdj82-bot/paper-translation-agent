@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Output directories (generated at runtime)
+output/intermediate/
+output/translated/
+output/archive/
+output/checkpoints/
+
+# Input (user's PDF files)
+input/*.pdf
+
+# Fonts (downloaded at runtime)
+fonts/*.otf
+fonts/*.ttf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

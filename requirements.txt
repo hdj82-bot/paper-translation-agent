@@ -1,0 +1,22 @@
+# Paper Translation Agent - Python Dependencies
+# 영문 논문 PDF 한국어 번역 에이전트
+
+# PDF 텍스트·레이아웃 추출
+pdfplumber>=0.10.0
+
+# PDF 페이지를 이미지로 변환 (Figure/Table/수식 크롭용)
+# 외부 의존: poppler 설치 필요 (OS별 안내 참고)
+pdf2image>=1.16.0
+
+# 이미지 처리 (크롭, 리사이즈)
+Pillow>=10.0.0
+
+# PDF 생성·텍스트 배치
+reportlab>=4.0
+
+# PDF 페이지 병합·추출
+pypdf>=3.0.0
+
+# OCR (하이브리드 PDF 폴백, 시각 요소 내 텍스트 번역 선택 시)
+# 외부 의존: tesseract-ocr 설치 필요 (OS별 안내 참고)
+pytesseract>=0.3.10
