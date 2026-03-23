@@ -8,6 +8,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import configure_pytesseract, get_poppler_path
+
+configure_pytesseract()
 
 
 def get_ocr_text(pdf_path: str, page_num: int) -> str:
@@ -16,7 +19,8 @@ def get_ocr_text(pdf_path: str, page_num: int) -> str:
         from pdf2image import convert_from_path
         import pytesseract
 
-        images = convert_from_path(pdf_path, first_page=page_num + 1, last_page=page_num + 1, dpi=300)
+        images = convert_from_path(pdf_path, first_page=page_num + 1, last_page=page_num + 1, dpi=300,
+                                   poppler_path=get_poppler_path())
         if images:
             return pytesseract.image_to_string(images[0], lang="eng")
     except ImportError:
