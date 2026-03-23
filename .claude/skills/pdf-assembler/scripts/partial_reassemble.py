@@ -6,11 +6,13 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_intermediate_dir
 
 
 def partial_reassemble(section_ids: list):
     """지정된 섹션만 재번역 결과를 반영하여 PDF 재조립"""
-    output_dir = PROJECT_ROOT / "output" / "intermediate"
+    output_dir = get_intermediate_dir()
     translated_dir = PROJECT_ROOT / "output" / "translated"
     meta_path = output_dir / "layout_metadata.json"
 

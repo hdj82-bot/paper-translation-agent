@@ -8,7 +8,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(PROJECT_ROOT))
-from utils.paths import configure_pytesseract, get_poppler_path
+from utils.paths import configure_pytesseract, get_intermediate_dir, get_poppler_path
 
 configure_pytesseract()
 
@@ -76,7 +76,7 @@ def main():
     parser.add_argument("pdf_path", help="분석할 PDF 파일 경로")
     args = parser.parse_args()
 
-    output_dir = PROJECT_ROOT / "output" / "intermediate"
+    output_dir = get_intermediate_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     (PROJECT_ROOT / "output" / "checkpoints").mkdir(parents=True, exist_ok=True)
 

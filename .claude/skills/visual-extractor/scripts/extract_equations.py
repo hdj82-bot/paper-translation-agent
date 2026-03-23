@@ -8,7 +8,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(PROJECT_ROOT))
-from utils.paths import get_poppler_path
+from utils.paths import get_intermediate_dir, get_poppler_path
 
 
 def extract_equations(pdf_path: str):
@@ -17,7 +17,7 @@ def extract_equations(pdf_path: str):
     poppler_path = get_poppler_path()
 
     pdf_path = str(Path(pdf_path).resolve())
-    output_dir = PROJECT_ROOT / "output" / "intermediate"
+    output_dir = get_intermediate_dir()
     visuals_dir = output_dir / "visuals" / "equations"
     visuals_dir.mkdir(parents=True, exist_ok=True)
 

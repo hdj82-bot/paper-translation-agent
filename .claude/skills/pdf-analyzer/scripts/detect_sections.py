@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_intermediate_dir
 
 KNOWN_SECTIONS = [
     "abstract", "introduction", "related work", "background",
@@ -96,7 +98,7 @@ def _scan_pdf_for_missed_sections(pdf_path: str, avg_font_size: float, found_pag
 
 
 def detect_sections():
-    output_dir = PROJECT_ROOT / "output" / "intermediate"
+    output_dir = get_intermediate_dir()
     meta_path = output_dir / "layout_metadata.json"
 
     if not meta_path.exists():

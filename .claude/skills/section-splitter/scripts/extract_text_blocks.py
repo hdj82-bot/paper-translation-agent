@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_intermediate_dir
 
 
 def blocks_overlap(bbox1, bbox2, threshold=0.5):
@@ -28,7 +30,7 @@ def blocks_overlap(bbox1, bbox2, threshold=0.5):
 
 
 def extract_text_blocks(pdf_path: str):
-    output_dir = PROJECT_ROOT / "output" / "intermediate"
+    output_dir = get_intermediate_dir()
     meta_path = output_dir / "layout_metadata.json"
 
     if not meta_path.exists():

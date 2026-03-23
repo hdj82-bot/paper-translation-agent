@@ -1,5 +1,6 @@
 """프로젝트 공통 경로 유틸리티"""
 
+import os
 import shutil
 from pathlib import Path
 
@@ -37,6 +38,18 @@ def get_tesseract_path() -> str | None:
             return path
 
     return None
+
+
+def get_intermediate_dir() -> Path:
+    """중간 산출물 디렉터리 반환.
+    JOB_DIR 환경변수가 설정된 경우 output/intermediate/{JOB_DIR}/를 사용.
+    배치 모드에서 오케스트레이터가 JOB_DIR을 PDF 파일명으로 설정하면
+    논문별로 독립된 작업 공간이 생성된다.
+    """
+    job_dir = os.environ.get("JOB_DIR", "")
+    if job_dir:
+        return PROJECT_ROOT / "output" / "intermediate" / job_dir
+    return PROJECT_ROOT / "output" / "intermediate"
 
 
 def configure_pytesseract():

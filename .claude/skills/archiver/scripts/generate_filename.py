@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_intermediate_dir
 
 
 def sanitize_filename(title: str, max_length: int = 50) -> str:
@@ -18,7 +20,7 @@ def sanitize_filename(title: str, max_length: int = 50) -> str:
 
 
 def generate_filename():
-    output_dir = PROJECT_ROOT / "output" / "intermediate"
+    output_dir = get_intermediate_dir()
     meta_path = output_dir / "layout_metadata.json"
 
     if not meta_path.exists():

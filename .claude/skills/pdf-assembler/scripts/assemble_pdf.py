@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_intermediate_dir
 
 
 def wrap_text(text, font_name, font_size, max_width, canvas_obj):
@@ -42,7 +44,7 @@ def assemble_pdf(original_pdf_path: str):
     import io
 
     original_pdf_path = str(Path(original_pdf_path).resolve())
-    output_dir = PROJECT_ROOT / "output" / "intermediate"
+    output_dir = get_intermediate_dir()
     translated_dir = PROJECT_ROOT / "output" / "translated"
     translated_dir.mkdir(parents=True, exist_ok=True)
 

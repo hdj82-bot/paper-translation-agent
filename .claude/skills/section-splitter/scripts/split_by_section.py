@@ -5,10 +5,12 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_intermediate_dir
 
 
 def split_by_section():
-    output_dir = PROJECT_ROOT / "output" / "intermediate"
+    output_dir = get_intermediate_dir()
     chunks_dir = output_dir / "chunks"
     chunks_dir.mkdir(parents=True, exist_ok=True)
     meta_path = output_dir / "layout_metadata.json"

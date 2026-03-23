@@ -8,13 +8,15 @@ from collections import Counter
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_intermediate_dir
 
 
 def detect_layout(pdf_path: str):
     import pdfplumber
 
     pdf_path = str(Path(pdf_path).resolve())
-    output_dir = PROJECT_ROOT / "output" / "intermediate"
+    output_dir = get_intermediate_dir()
     meta_path = output_dir / "layout_metadata.json"
 
     if not meta_path.exists():

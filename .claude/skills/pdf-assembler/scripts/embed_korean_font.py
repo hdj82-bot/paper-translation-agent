@@ -7,6 +7,8 @@ import urllib.request
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_intermediate_dir
 
 FONT_URLS = {
     "NotoSansKR-Regular.otf": "https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf",
@@ -18,7 +20,7 @@ def embed_korean_font():
     fonts_dir = PROJECT_ROOT / "fonts"
     fonts_dir.mkdir(parents=True, exist_ok=True)
 
-    meta_path = PROJECT_ROOT / "output" / "intermediate" / "layout_metadata.json"
+    meta_path = get_intermediate_dir() / "layout_metadata.json"
 
     target_font = "NotoSansKR-Regular.otf"
     if meta_path.exists():
