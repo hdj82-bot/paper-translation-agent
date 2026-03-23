@@ -78,6 +78,7 @@ def main():
 
     output_dir = PROJECT_ROOT / "output" / "intermediate"
     output_dir.mkdir(parents=True, exist_ok=True)
+    (PROJECT_ROOT / "output" / "checkpoints").mkdir(parents=True, exist_ok=True)
 
     metadata = extract_metadata(args.pdf_path)
 

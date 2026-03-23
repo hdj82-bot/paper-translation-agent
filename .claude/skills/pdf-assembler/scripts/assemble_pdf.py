@@ -140,11 +140,22 @@ def assemble_pdf(original_pdf_path: str):
         pagesize=(first_page_size["width"], first_page_size["height"]),
     )
 
-    translated_page_map = {}  # original_page -> translated_page_index
+    # 원본 페이지 → 번역 PDF 페이지 범위 매핑
+    # {original_page_num: (start_idx, end_idx)}  (end_idx exclusive)
+    translated_page_ranges = {}
+    translated_page_counter = [0]  # 리스트로 감싸 클로저에서 변경 가능
+
+    def finish_page():
+        c.showPage()
+        translated_page_counter[0] += 1
+
+    layout_type = metadata.get("layout_type", "1-column")
 
     for page_num in range(1, total_pages + 1):
         if page_num in preserved_pages:
             continue
+
+        page_start = translated_page_counter[0]
 
         page_size = page_sizes[page_num - 1] if page_num <= len(page_sizes) else first_page_size
         pw = page_size["width"]
@@ -157,7 +168,6 @@ def assemble_pdf(original_pdf_path: str):
         y_offset_by_col = {1: 0, 2: 0}
 
         # 블록을 컬럼 우선, Y좌표 순으로 정렬 (읽기 순서 유지)
-        layout_type = metadata.get("layout_type", "1-column")
         if layout_type == "2-column":
             blocks.sort(key=lambda b: (b.get("column", 1), b["bbox"][1]))
         else:
@@ -193,7 +203,7 @@ def assemble_pdf(original_pdf_path: str):
             for i, line in enumerate(lines):
                 y_pos = y_start - (i * line_height)
                 if y_pos < 30:  # 페이지 하단에 도달하면 새 페이지
-                    c.showPage()
+                    finish_page()
                     c.setPageSize((pw, ph))
                     c.setFont(ko_font_name, font_size)
                     y_pos = ph - 50
@@ -223,7 +233,8 @@ def assemble_pdf(original_pdf_path: str):
             except Exception as e:
                 print(f"[경고] 이미지 삽입 실패 ({visual['id']}): {e}", file=sys.stderr)
 
-        c.showPage()
+        finish_page()
+        translated_page_ranges[page_num] = (page_start, translated_page_counter[0])
 
     c.save()
 
@@ -233,17 +244,17 @@ def assemble_pdf(original_pdf_path: str):
     original_reader = PdfReader(original_pdf_path)
 
     writer = PdfWriter()
-    translated_page_idx = 0
 
     for page_num in range(1, total_pages + 1):
         if page_num in preserved_pages:
             # 원문 페이지 그대로 사용
             writer.add_page(original_reader.pages[page_num - 1])
         else:
-            # 번역 페이지 사용
-            if translated_page_idx < len(translated_reader.pages):
-                writer.add_page(translated_reader.pages[translated_page_idx])
-                translated_page_idx += 1
+            # 이 원본 페이지에 대응하는 번역 페이지 전부 삽입
+            start, end = translated_page_ranges.get(page_num, (0, 0))
+            for tidx in range(start, end):
+                if tidx < len(translated_reader.pages):
+                    writer.add_page(translated_reader.pages[tidx])
 
     with open(output_path, "wb") as f:
         writer.write(f)
