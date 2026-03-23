@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>논문 번역 에이전트</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f0f2f5;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+    padding: 40px 44px;
+    width: 100%;
+    max-width: 640px;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 32px;
+  }
+
+  /* ── 드래그앤드롭 영역 ── */
+  #drop-zone {
+    border: 2px dashed #c5c9d4;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    position: relative;
+  }
+  #drop-zone.drag-over {
+    border-color: #4f6ef7;
+    background: #f0f3ff;
+  }
+  #drop-zone .icon { font-size: 40px; margin-bottom: 12px; }
+  #drop-zone .hint { color: #555; font-size: 14px; }
+  #drop-zone .hint strong { color: #4f6ef7; }
+  #drop-zone .note { font-size: 12px; color: #aaa; margin-top: 6px; }
+  #file-input { display: none; }
+
+  /* ── 선택된 파일명 ── */
+  #file-info {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #444;
+    display: none;
+    align-items: center;
+    gap: 8px;
+  }
+  #file-info .fname {
+    font-weight: 600;
+    color: #1a1a2e;
+    word-break: break-all;
+  }
+  #file-info .fsize { color: #999; }
+
+  /* ── 버튼 ── */
+  #translate-btn {
+    margin-top: 20px;
+    width: 100%;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: #4f6ef7;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background .2s, opacity .2s;
+  }
+  #translate-btn:hover:not(:disabled) { background: #3a58e0; }
+  #translate-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+  /* ── 진행상황 ── */
+  #progress-section { margin-top: 28px; display: none; }
+
+  .step-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    margin-bottom: 6px;
+    color: #555;
+  }
+  .step-label .pct { font-weight: 700; color: #4f6ef7; }
+
+  .progress-bar-bg {
+    height: 10px;
+    background: #e8eaf0;
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4f6ef7, #7b9ff9);
+    border-radius: 99px;
+    transition: width .4s ease;
+    width: 0%;
+  }
+
+  /* ── 로그 ── */
+  #log {
+    margin-top: 16px;
+    background: #f7f8fa;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    font-family: "SF Mono", "Consolas", monospace;
+    color: #444;
+    max-height: 200px;
+    overflow-y: auto;
+    line-height: 1.7;
+  }
+  #log .entry { display: block; }
+  #log .entry.error { color: #e03e3e; }
+  #log .entry.done  { color: #2d8a4e; font-weight: 600; }
+
+  /* ── 다운로드 ── */
+  #download-section {
+    margin-top: 20px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  #download-btn {
+    width: 100%;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: #2d8a4e;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background .2s;
+    text-decoration: none;
+    display: block;
+    text-align: center;
+  }
+  #download-btn:hover { background: #236b3c; }
+  #restart-btn {
+    font-size: 13px;
+    color: #888;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  /* ── 에러 배너 ── */
+  #error-banner {
+    display: none;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #fff0f0;
+    border-left: 4px solid #e03e3e;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #b22222;
+    word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>📄 논문 번역 에이전트</h1>
+  <p class="subtitle">영문 학술 논문 PDF → 한국어 번역 PDF 자동 생성</p>
+
+  <!-- 업로드 영역 -->
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <div class="icon">📂</div>
+    <div class="hint"><strong>PDF 파일을 드래그</strong>하거나 클릭하여 선택</div>
+    <div class="note">최대 100MB · 영문 학술 논문 PDF</div>
+    <input type="file" id="file-input" accept=".pdf">
+  </div>
+
+  <div id="file-info">
+    <span>📄</span>
+    <span class="fname" id="fname-text"></span>
+    <span class="fsize" id="fsize-text"></span>
+  </div>
+
+  <button id="translate-btn" disabled>번역 시작</button>
+
+  <!-- 진행상황 -->
+  <div id="progress-section">
+    <div class="step-label">
+      <span id="step-text">준비 중…</span>
+      <span class="pct" id="pct-text">0%</span>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <!-- 에러 -->
+  <div id="error-banner" id="error-text"></div>
+
+  <!-- 다운로드 -->
+  <div id="download-section">
+    <a id="download-btn" href="#" download>⬇ 번역 PDF 다운로드</a>
+    <button id="restart-btn" onclick="restart()">새 파일 번역하기</button>
+  </div>
+</div>
+
+<script>
+// ──────────────────────────────────────────────
+// 상태
+// ──────────────────────────────────────────────
+let selectedFile = null;
+let currentJobId = null;
+let evtSource = null;
+
+// ──────────────────────────────────────────────
+// 파일 선택
+// ──────────────────────────────────────────────
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const fileInfo   = document.getElementById('file-info');
+const fnameText  = document.getElementById('fname-text');
+const fsizeText  = document.getElementById('fsize-text');
+const xlateBtn   = document.getElementById('translate-btn');
+
+fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.toLowerCase().endsWith('.pdf')) setFile(f);
+  else showError('PDF 파일만 업로드 가능합니다.');
+});
+
+function setFile(f) {
+  if (!f) return;
+  selectedFile = f;
+  fnameText.textContent = f.name;
+  fsizeText.textContent = formatBytes(f.size);
+  fileInfo.style.display = 'flex';
+  xlateBtn.disabled = false;
+  hideError();
+}
+
+function formatBytes(b) {
+  if (b < 1024)       return b + ' B';
+  if (b < 1048576)    return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+// ──────────────────────────────────────────────
+// 번역 시작
+// ──────────────────────────────────────────────
+xlateBtn.addEventListener('click', startTranslation);
+
+async function startTranslation() {
+  if (!selectedFile) return;
+  xlateBtn.disabled = true;
+  dropZone.style.pointerEvents = 'none';
+  dropZone.style.opacity = '0.5';
+  hideError();
+
+  // UI 초기화
+  document.getElementById('progress-section').style.display = 'block';
+  document.getElementById('download-section').style.display = 'none';
+  document.getElementById('log').innerHTML = '';
+  setProgress(0, '파일 업로드 중…');
+
+  const form = new FormData();
+  form.append('file', selectedFile);
+
+  let resp;
+  try {
+    resp = await fetch('/api/jobs', { method: 'POST', body: form });
+  } catch (e) {
+    showError('서버에 연결할 수 없습니다: ' + e.message);
+    resetUpload();
+    return;
+  }
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    showError('업로드 실패: ' + (err.detail || resp.statusText));
+    resetUpload();
+    return;
+  }
+
+  const { job_id } = await resp.json();
+  currentJobId = job_id;
+  addLog('작업 ID: ' + job_id);
+  startSSE(job_id);
+}
+
+// ──────────────────────────────────────────────
+// SSE 진행상황 수신
+// ──────────────────────────────────────────────
+function startSSE(jobId) {
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource('/api/jobs/' + jobId + '/events');
+
+  evtSource.onmessage = e => {
+    const data = JSON.parse(e.data);
+    setProgress(data.progress, data.step + ': ' + data.message);
+    addLog(data.step + ' — ' + data.message, data.status === 'failed' ? 'error' : '');
+
+    if (data.done) {
+      evtSource.close();
+      if (data.status === 'failed' || data.message === data.error) {
+        showError('번역 실패: ' + data.message);
+        resetUpload();
+      } else {
+        onCompleted(jobId);
+      }
+    }
+  };
+
+  evtSource.onerror = () => {
+    evtSource.close();
+    // 완료 상태 폴링 (SSE 연결 끊김 후)
+    pollStatus(jobId);
+  };
+}
+
+async function pollStatus(jobId) {
+  const resp = await fetch('/api/jobs/' + jobId + '/status').catch(() => null);
+  if (!resp || !resp.ok) {
+    showError('서버 연결이 끊겼습니다.');
+    resetUpload();
+    return;
+  }
+  const data = await resp.json();
+  if (data.status === 'completed') {
+    setProgress(100, '완료');
+    onCompleted(jobId);
+  } else if (data.status === 'failed') {
+    showError('번역 실패: ' + (data.error || '알 수 없는 오류'));
+    resetUpload();
+  } else {
+    setTimeout(() => pollStatus(jobId), 2000);
+  }
+}
+
+// ──────────────────────────────────────────────
+// 완료 처리
+// ──────────────────────────────────────────────
+function onCompleted(jobId) {
+  setProgress(100, '번역 완료!');
+  addLog('✅ 번역이 완료되었습니다!', 'done');
+  const dlBtn = document.getElementById('download-btn');
+  dlBtn.href = '/api/jobs/' + jobId + '/download';
+  document.getElementById('download-section').style.display = 'flex';
+}
+
+// ──────────────────────────────────────────────
+// UI 유틸
+// ──────────────────────────────────────────────
+function setProgress(pct, label) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('pct-text').textContent = pct + '%';
+  document.getElementById('step-text').textContent = label;
+}
+
+function addLog(msg, cls = '') {
+  const log = document.getElementById('log');
+  const span = document.createElement('span');
+  span.className = 'entry ' + cls;
+  span.textContent = msg;
+  log.appendChild(span);
+  log.scrollTop = log.scrollHeight;
+}
+
+function showError(msg) {
+  const banner = document.getElementById('error-banner');
+  banner.textContent = '⚠ ' + msg;
+  banner.style.display = 'block';
+}
+
+function hideError() {
+  document.getElementById('error-banner').style.display = 'none';
+}
+
+function resetUpload() {
+  xlateBtn.disabled = !selectedFile;
+  dropZone.style.pointerEvents = '';
+  dropZone.style.opacity = '';
+}
+
+function restart() {
+  selectedFile = null;
+  currentJobId = null;
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  fileInfo.style.display = 'none';
+  xlateBtn.disabled = true;
+  document.getElementById('progress-section').style.display = 'none';
+  document.getElementById('download-section').style.display = 'none';
+  document.getElementById('log').innerHTML = '';
+  dropZone.style.pointerEvents = '';
+  dropZone.style.opacity = '';
+  fileInput.value = '';
+  hideError();
+}
+</script>
+</body>
+</html>
