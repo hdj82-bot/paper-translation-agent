@@ -7,10 +7,14 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_poppler_path
 
 
 def extract_equations(pdf_path: str):
     from pdf2image import convert_from_path
+
+    poppler_path = get_poppler_path()
 
     pdf_path = str(Path(pdf_path).resolve())
     output_dir = PROJECT_ROOT / "output" / "intermediate"
@@ -102,7 +106,8 @@ def extract_equations(pdf_path: str):
     for page_num in pages_needed:
         try:
             page_images = convert_from_path(
-                pdf_path, first_page=page_num, last_page=page_num, dpi=200
+                pdf_path, first_page=page_num, last_page=page_num, dpi=200,
+                poppler_path=poppler_path
             )
         except Exception as e:
             print(f"[경고] 페이지 {page_num} 이미지 변환 실패: {e}", file=sys.stderr)

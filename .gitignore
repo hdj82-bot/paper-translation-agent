@@ -18,6 +18,9 @@ input/*.pdf
 fonts/*.otf
 fonts/*.ttf
 
+# External tools (downloaded at runtime)
+tools/
+
 # OS
 .DS_Store
 Thumbs.db

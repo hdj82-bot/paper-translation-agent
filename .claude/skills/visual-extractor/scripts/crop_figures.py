@@ -7,12 +7,16 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.paths import get_poppler_path
 
 
 def crop_figures(pdf_path: str):
     import pdfplumber
     from pdf2image import convert_from_path
     from PIL import Image
+
+    poppler_path = get_poppler_path()
 
     pdf_path = str(Path(pdf_path).resolve())
     output_dir = PROJECT_ROOT / "output" / "intermediate"
@@ -49,7 +53,8 @@ def crop_figures(pdf_path: str):
             # 페이지를 이미지로 변환
             try:
                 page_images = convert_from_path(
-                    pdf_path, first_page=page_num, last_page=page_num, dpi=200
+                    pdf_path, first_page=page_num, last_page=page_num, dpi=200,
+                    poppler_path=poppler_path
                 )
             except Exception as e:
                 print(f"[경고] 페이지 {page_num} 이미지 변환 실패: {e}", file=sys.stderr)
