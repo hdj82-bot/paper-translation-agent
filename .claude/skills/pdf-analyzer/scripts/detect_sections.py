@@ -11,16 +11,29 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from utils.paths import get_intermediate_dir
 
 KNOWN_SECTIONS = [
-    "abstract", "introduction", "related work", "background",
+    "abstract", "introduction", "related work", "related works",
+    "background", "backgrounds", "preliminaries",
+    "literature review", "literature survey",
     "method", "methodology", "methods", "approach", "proposed method",
+    "proposed approach", "proposed framework", "proposed model",
+    "system design", "system overview", "architecture", "framework",
+    "model", "models",
     "experimental", "experiments", "experiment", "experimental setup",
-    "results", "result", "evaluation",
-    "discussion", "analysis",
-    "conclusion", "conclusions", "concluding remarks",
-    "future work",
+    "experimental results", "experimental evaluation",
+    "results", "result", "evaluation", "evaluations",
+    "results and discussion", "results and discussions",
+    "discussion", "discussions", "analysis",
+    "conclusion", "conclusions", "concluding remarks", "summary",
+    "future work", "future works", "future directions", "limitations",
     "references", "bibliography",
     "appendix", "appendices", "supplementary", "supplementary material",
     "acknowledgment", "acknowledgments", "acknowledgement", "acknowledgements",
+    "dataset", "datasets", "data", "corpus",
+    "implementation", "implementation details",
+    "performance", "comparison", "comparisons",
+    "motivation", "problem statement", "problem formulation",
+    "notation", "notations", "definition", "definitions",
+    "overview",
 ]
 
 NO_TRANSLATE_SECTIONS = [
@@ -72,14 +85,17 @@ def _scan_pdf_for_missed_sections(pdf_path: str, avg_font_size: float, found_pag
                     avg_line_size = sum(sizes) / len(sizes) if sizes else avg_font_size
 
                     # 평균보다 큰 폰트 + 알려진 섹션명
-                    if avg_line_size <= avg_font_size * 1.05:
+                    if avg_line_size <= avg_font_size * 1.0:
                         continue
 
                     clean = HEADING_NUMBER_PATTERN.sub("", line_text).strip()
                     text_lower = clean.lower()
 
                     for known in KNOWN_SECTIONS:
-                        if text_lower == known or text_lower.startswith(known + " ") or text_lower.startswith(known + ":"):
+                        if (text_lower == known
+                                or text_lower.startswith(known + " ")
+                                or text_lower.startswith(known + ":")
+                                or text_lower.startswith(known + ".")):
                             y0 = min(float(w["top"]) for w in line)
                             x0 = min(float(w["x0"]) for w in line)
                             x1 = max(float(w["x1"]) for w in line)
@@ -139,12 +155,15 @@ def detect_sections():
         # 기준 1: 알려진 섹션명 매칭
         text_lower = clean_text.lower()
         for known in KNOWN_SECTIONS:
-            if text_lower == known or text_lower.startswith(known + ":") or text_lower.startswith(known + "."):
+            if (text_lower == known
+                    or text_lower.startswith(known + ":")
+                    or text_lower.startswith(known + ".")
+                    or text_lower.startswith(known + " ")):
                 is_heading = True
                 break
 
         # 기준 2: 폰트 크기가 평균보다 큰 경우 + 짧은 텍스트
-        if not is_heading and block["font_size"] > avg_font_size * 1.15 and len(text) < 80:
+        if not is_heading and block["font_size"] > avg_font_size * 1.08 and len(text) < 80:
             # 번호 패턴이 있으면 헤딩일 가능성 높음
             if HEADING_NUMBER_PATTERN.match(text):
                 is_heading = True
@@ -233,6 +252,18 @@ def detect_sections():
         else:
             end_page = metadata["pages"]
         sec["pages"] = list(range(start_page, end_page + 1))
+
+    # 섹션이 하나도 감지되지 않으면 전체 논문을 단일 섹션으로 처리
+    if not sections:
+        total_pages = metadata.get("pages", 1)
+        print(f"[경고] 섹션 헤딩을 감지하지 못했습니다. 전체 논문({total_pages}페이지)을 단일 섹션으로 처리합니다.", file=sys.stderr)
+        sections = [{
+            "name": "Full Paper",
+            "pages": list(range(1, total_pages + 1)),
+            "chunk_id": "01_full_paper",
+            "translate": True,
+            "heading_block_id": None,
+        }]
 
     metadata["sections"] = sections
 

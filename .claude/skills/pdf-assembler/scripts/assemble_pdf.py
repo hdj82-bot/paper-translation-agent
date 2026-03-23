@@ -11,36 +11,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from utils.paths import get_intermediate_dir
 
 
-def wrap_text(text, font_name, font_size, max_width, canvas_obj):
-    """텍스트를 주어진 너비에 맞게 줄바꿈"""
-    from reportlab.lib.units import mm
-
-    words = text.split()
-    lines = []
-    current_line = ""
-
-    for word in words:
-        test_line = f"{current_line} {word}".strip()
-        width = canvas_obj.stringWidth(test_line, font_name, font_size)
-        if width <= max_width:
-            current_line = test_line
-        else:
-            if current_line:
-                lines.append(current_line)
-            current_line = word
-    if current_line:
-        lines.append(current_line)
-
-    return lines
-
-
 def assemble_pdf(original_pdf_path: str):
-    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak, HRFlowable
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.pdfgen import canvas as canvas_module
-    from pypdf import PdfReader, PdfWriter, PdfMerger
+    from pypdf import PdfReader, PdfWriter
     import io
 
     original_pdf_path = str(Path(original_pdf_path).resolve())
@@ -84,42 +63,29 @@ def assemble_pdf(original_pdf_path: str):
         print(f"[오류] 폰트 등록 실패: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 번역된 청크 로드
-    translated_chunks = {}
-    preserved_chunks = {}
+    # 번역된 청크 로드 — 페이지 순서대로 블록 수집
+    all_blocks = []  # [{"page": int, "text": str, "font_size": float, ...}]
 
     for chunk_file in sorted(chunks_dir.glob("*_translated.json")):
         with open(chunk_file, "r", encoding="utf-8") as f:
             chunk = json.load(f)
-        translated_chunks[chunk["chunk_id"]] = chunk
+        for block in chunk.get("blocks", []):
+            text = block.get("translated_text") or block.get("original_text", "")
+            if text and text.strip():
+                all_blocks.append({
+                    "page": block.get("page", 1),
+                    "y": block.get("bbox", [0, 0, 0, 0])[1],
+                    "text": text.strip(),
+                    "font_size": block.get("font_size", 10),
+                    "column": block.get("column", 1),
+                })
 
-    for chunk_file in sorted(chunks_dir.glob("*.json")):
-        if "_translated" in chunk_file.name:
-            continue
-        with open(chunk_file, "r", encoding="utf-8") as f:
-            chunk = json.load(f)
-        if not chunk.get("translate", True):
-            preserved_chunks[chunk["chunk_id"]] = chunk
-
-    # 페이지 크기
-    page_sizes = metadata.get("page_sizes", [{"width": 612, "height": 792}])
-    sections = metadata.get("sections", [])
-
-    # 원문 유지 섹션의 페이지 번호 수집
+    # 원문 유지 섹션의 페이지 번호
     preserved_pages = set()
-    for sec in sections:
+    for sec in metadata.get("sections", []):
         if not sec.get("translate", True):
             for p in sec.get("pages", []):
                 preserved_pages.add(p)
-
-    # 번역된 페이지의 블록을 페이지별로 그룹핑
-    page_blocks = {}
-    for chunk in translated_chunks.values():
-        for block in chunk.get("blocks", []):
-            page = block.get("page", 1)
-            if page not in page_blocks:
-                page_blocks[page] = []
-            page_blocks[page].append(block)
 
     # 시각 요소를 페이지별로 그룹핑
     page_visuals = {}
@@ -129,116 +95,107 @@ def assemble_pdf(original_pdf_path: str):
             page_visuals[page] = []
         page_visuals[page].append(visual)
 
-    # PDF 생성
-    total_pages = metadata.get("pages", 1)
-    output_filename = Path(original_pdf_path).stem + "_translated.pdf"
-    output_path = translated_dir / output_filename
+    # 블록을 페이지·컬럼·y좌표 순으로 정렬
+    all_blocks.sort(key=lambda b: (b["page"], b["column"], b["y"]))
 
-    # reportlab으로 번역 페이지 생성
-    translated_pdf_buffer = io.BytesIO()
-    first_page_size = page_sizes[0] if page_sizes else {"width": 612, "height": 792}
-    c = canvas_module.Canvas(
-        translated_pdf_buffer,
-        pagesize=(first_page_size["width"], first_page_size["height"]),
+    # reportlab 스타일 설정
+    PAGE_W, PAGE_H = A4  # 595 x 842 pt
+    MARGIN = 25 * mm
+    CONTENT_W = PAGE_W - 2 * MARGIN
+
+    normal_style = ParagraphStyle(
+        "KoNormal",
+        fontName=ko_font_name,
+        fontSize=10,
+        leading=16,
+        spaceAfter=4,
+        wordWrap="CJK",
+        alignment=TA_LEFT,
+    )
+    heading_style = ParagraphStyle(
+        "KoHeading",
+        fontName=ko_font_name,
+        fontSize=13,
+        leading=20,
+        spaceBefore=10,
+        spaceAfter=6,
+        wordWrap="CJK",
+        alignment=TA_LEFT,
+    )
+    small_style = ParagraphStyle(
+        "KoSmall",
+        fontName=ko_font_name,
+        fontSize=8,
+        leading=12,
+        spaceAfter=2,
+        wordWrap="CJK",
+        alignment=TA_LEFT,
     )
 
-    # 원본 페이지 → 번역 PDF 페이지 범위 매핑
-    # {original_page_num: (start_idx, end_idx)}  (end_idx exclusive)
-    translated_page_ranges = {}
-    translated_page_counter = [0]  # 리스트로 감싸 클로저에서 변경 가능
+    def pick_style(font_size):
+        if font_size >= 13:
+            return heading_style
+        if font_size <= 8:
+            return small_style
+        return normal_style
 
-    def finish_page():
-        c.showPage()
-        translated_page_counter[0] += 1
+    # flowable 목록 생성
+    story = []
+    total_pages = metadata.get("pages", 1)
+    current_page = 0
 
-    layout_type = metadata.get("layout_type", "1-column")
-
-    for page_num in range(1, total_pages + 1):
-        if page_num in preserved_pages:
+    for block in all_blocks:
+        page = block["page"]
+        if page in preserved_pages:
             continue
 
-        page_start = translated_page_counter[0]
+        # 페이지 구분선
+        if page != current_page:
+            if current_page > 0:
+                story.append(HRFlowable(width="100%", thickness=0.3, color="grey", spaceAfter=4))
+            current_page = page
 
-        page_size = page_sizes[page_num - 1] if page_num <= len(page_sizes) else first_page_size
-        pw = page_size["width"]
-        ph = page_size["height"]
-        c.setPageSize((pw, ph))
+            # 해당 페이지 시각 요소 삽입 (페이지 첫 블록 앞에)
+            for visual in page_visuals.get(page, []):
+                img_path = PROJECT_ROOT / visual["image_path"]
+                if img_path.exists():
+                    try:
+                        vbbox = visual["bbox"]
+                        vw = vbbox[2] - vbbox[0]
+                        vh = vbbox[3] - vbbox[1]
+                        # 이미지 크기를 콘텐츠 영역에 맞게 조정
+                        scale = min(CONTENT_W / max(vw, 1), 200 / max(vh, 1))
+                        img = Image(str(img_path), width=vw * scale, height=vh * scale)
+                        story.append(img)
+                        story.append(Spacer(1, 4))
+                    except Exception as e:
+                        print(f"[경고] 이미지 삽입 실패 ({visual['id']}): {e}", file=sys.stderr)
 
-        blocks = page_blocks.get(page_num, [])
-        visuals = page_visuals.get(page_num, [])
-        # 컬럼별 y_offset 분리 (2컬럼 레이아웃 지원)
-        y_offset_by_col = {1: 0, 2: 0}
+        text = block["text"]
+        style = pick_style(block["font_size"])
+        # XML 특수문자 이스케이프
+        safe_text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        try:
+            para = Paragraph(safe_text, style)
+            story.append(para)
+        except Exception as e:
+            print(f"[경고] 단락 생성 실패: {e}", file=sys.stderr)
+            story.append(Paragraph("[렌더링 오류]", normal_style))
 
-        # 블록을 컬럼 우선, Y좌표 순으로 정렬 (읽기 순서 유지)
-        if layout_type == "2-column":
-            blocks.sort(key=lambda b: (b.get("column", 1), b["bbox"][1]))
-        else:
-            blocks.sort(key=lambda b: b["bbox"][1])
+    if not story:
+        story.append(Paragraph("번역된 내용이 없습니다.", normal_style))
 
-        for block in blocks:
-            bbox = block["bbox"]
-            x0, y0_orig, x1, y1_orig = bbox
-
-            # reportlab은 좌하단이 원점 (PDF 좌표 변환)
-            text = block.get("translated_text", block.get("original_text", ""))
-            if not text:
-                continue
-
-            font_size = block.get("font_size", 10)
-            max_width = x1 - x0
-
-            # 텍스트 줄바꿈
-            lines = wrap_text(text, ko_font_name, font_size, max_width, c)
-            line_height = font_size * 1.4
-
-            # 원래 높이 vs 필요 높이
-            original_height = y1_orig - y0_orig
-            needed_height = len(lines) * line_height
-            extra = max(0, needed_height - original_height)
-
-            # reportlab Y좌표: 페이지 하단에서 위로
-            col = block.get("column", 1)
-            y_offset = y_offset_by_col.get(col, 0)
-            y_start = ph - (y0_orig + y_offset) - font_size
-
-            c.setFont(ko_font_name, font_size)
-            for i, line in enumerate(lines):
-                y_pos = y_start - (i * line_height)
-                if y_pos < 30:  # 페이지 하단에 도달하면 새 페이지
-                    finish_page()
-                    c.setPageSize((pw, ph))
-                    c.setFont(ko_font_name, font_size)
-                    y_pos = ph - 50
-                    y_start = y_pos + (i * line_height)
-                c.drawString(x0, y_pos, line)
-
-            y_offset_by_col[col] = y_offset_by_col.get(col, 0) + extra
-
-        # 시각 요소 삽입
-        max_y_offset = max(y_offset_by_col.values()) if y_offset_by_col else 0
-        for visual in visuals:
-            img_path = PROJECT_ROOT / visual["image_path"]
-            if not img_path.exists():
-                continue
-
-            vbbox = visual["bbox"]
-            vx0 = vbbox[0]
-            vy0 = vbbox[1] + max_y_offset
-            vw = vbbox[2] - vbbox[0]
-            vh = vbbox[3] - vbbox[1]
-
-            # reportlab Y좌표 변환
-            vy_rl = ph - vy0 - vh
-
-            try:
-                c.drawImage(str(img_path), vx0, vy_rl, width=vw, height=vh, preserveAspectRatio=True)
-            except Exception as e:
-                print(f"[경고] 이미지 삽입 실패 ({visual['id']}): {e}", file=sys.stderr)
-
-        finish_page()
-        translated_page_ranges[page_num] = (page_start, translated_page_counter[0])
-
-    c.save()
+    # 번역 페이지 PDF 생성
+    translated_pdf_buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        translated_pdf_buffer,
+        pagesize=A4,
+        leftMargin=MARGIN,
+        rightMargin=MARGIN,
+        topMargin=MARGIN,
+        bottomMargin=MARGIN,
+    )
+    doc.build(story)
 
     # 원문 유지 페이지와 번역 페이지 합치기
     translated_pdf_buffer.seek(0)
@@ -247,23 +204,23 @@ def assemble_pdf(original_pdf_path: str):
 
     writer = PdfWriter()
 
-    for page_num in range(1, total_pages + 1):
-        if page_num in preserved_pages:
-            # 원문 페이지 그대로 사용
+    # 번역 페이지를 앞에, 원문 유지 페이지를 뒤에 추가
+    for page in translated_reader.pages:
+        writer.add_page(page)
+
+    for page_num in preserved_pages:
+        if page_num - 1 < len(original_reader.pages):
             writer.add_page(original_reader.pages[page_num - 1])
-        else:
-            # 이 원본 페이지에 대응하는 번역 페이지 전부 삽입
-            start, end = translated_page_ranges.get(page_num, (0, 0))
-            for tidx in range(start, end):
-                if tidx < len(translated_reader.pages):
-                    writer.add_page(translated_reader.pages[tidx])
+
+    output_filename = Path(original_pdf_path).stem + "_translated.pdf"
+    output_path = translated_dir / output_filename
 
     with open(output_path, "wb") as f:
         writer.write(f)
 
     print(f"[완료] 번역 PDF 생성: {output_path}")
     print(f"  - 총 페이지: {len(writer.pages)}")
-    print(f"  - 번역 페이지: {translated_page_idx}")
+    print(f"  - 번역 블록 수: {len(all_blocks)}")
     print(f"  - 원문 유지 페이지: {len(preserved_pages)}")
 
 

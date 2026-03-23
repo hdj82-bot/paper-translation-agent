@@ -4,6 +4,14 @@ import asyncio
 import json
 from pathlib import Path
 
+# .env 파일 자동 로드 (python-dotenv)
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parents[1] / ".env"
+    load_dotenv(dotenv_path=_env_path, override=False)
+except ImportError:
+    pass  # python-dotenv 없으면 환경변수는 OS 설정에서 읽음
+
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles

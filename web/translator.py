@@ -113,33 +113,41 @@ def translate_chunk(chunk_path: str) -> dict:
         for b in blocks
     ]
 
-    user_message = (
-        f"섹션: {chunk['section_name']}\n\n"
-        "다음 텍스트 블록들을 번역 정책에 따라 한국어로 번역하세요.\n"
-        "각 블록에 `translated_text`와 `has_inline_math` 필드를 추가하여 JSON 배열로 반환하세요.\n\n"
-        + json.dumps(blocks_for_translation, ensure_ascii=False, indent=2)
-    )
-
     client = anthropic.Anthropic()
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=8192,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
-    )
+    # 블록을 30개씩 배치로 나눠서 번역 (토큰 한도 초과 방지)
+    BATCH_SIZE = 30
+    translated_blocks = []
 
-    raw_text = response.content[0].text
-    json_text = _extract_json(raw_text)
+    for batch_start in range(0, len(blocks_for_translation), BATCH_SIZE):
+        batch = blocks_for_translation[batch_start: batch_start + BATCH_SIZE]
 
-    try:
-        translated_blocks = json.loads(json_text)
-    except json.JSONDecodeError as e:
-        print(f"[경고] JSON 파싱 실패: {e}\n원문 블록에 번역 없이 저장합니다.", file=sys.stderr)
-        translated_blocks = [
-            {**b, "translated_text": b["original_text"], "has_inline_math": False}
-            for b in blocks_for_translation
-        ]
+        user_message = (
+            f"섹션: {chunk['section_name']}\n\n"
+            "다음 텍스트 블록들을 번역 정책에 따라 한국어로 번역하세요.\n"
+            "각 블록에 `translated_text`와 `has_inline_math` 필드를 추가하여 JSON 배열로 반환하세요.\n\n"
+            + json.dumps(batch, ensure_ascii=False, indent=2)
+        )
+
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=8192,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+
+        raw_text = response.content[0].text
+        json_text = _extract_json(raw_text)
+
+        try:
+            batch_translated = json.loads(json_text)
+            translated_blocks.extend(batch_translated)
+        except json.JSONDecodeError as e:
+            print(f"[경고] 배치 {batch_start//BATCH_SIZE + 1} JSON 파싱 실패: {e}\n원문 유지.", file=sys.stderr)
+            translated_blocks.extend([
+                {**b, "translated_text": b["original_text"], "has_inline_math": False}
+                for b in batch
+            ])
 
     # 원본 블록 메타데이터(font_size 등)와 병합
     block_map = {b["id"]: b for b in blocks}

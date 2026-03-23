@@ -87,7 +87,7 @@ def _run_script(state: JobState, script_rel: str, *args: str) -> bool:
     )
     if result.returncode != 0:
         err = (result.stderr or result.stdout or "알 수 없는 오류").strip()
-        _emit(state, "오류", f"{script_rel} 실패: {err[:300]}", state.progress)
+        _emit(state, "오류", f"{script_rel} 실패: {err[:1500]}", state.progress)
         return False
     return True
 
@@ -107,6 +107,34 @@ def _run_job(job_id: str, pdf_path: str):
         state.done = True
 
 
+def _verify_sections_or_fallback(state: JobState):
+    """STEP 1 완료 후 섹션이 감지됐는지 확인. 없으면 전체 논문 단일 섹션으로 폴백."""
+    import json as _json
+    meta_path = PROJECT_ROOT / "output" / "intermediate" / state.job_id / "layout_metadata.json"
+    if not meta_path.exists():
+        return  # layout_metadata.json 자체가 없으면 이후 스텝에서 처리됨
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        metadata = _json.load(f)
+
+    sections = metadata.get("sections", [])
+    if sections:
+        return  # 이미 섹션이 있음
+
+    # 폴백: 전체 논문을 단일 섹션으로 처리
+    total_pages = metadata.get("pages", 1)
+    _emit(state, "STEP 1", f"섹션 자동 감지 실패 — 전체 논문({total_pages}p)을 단일 섹션으로 처리", state.progress)
+    metadata["sections"] = [{
+        "name": "Full Paper",
+        "pages": list(range(1, total_pages + 1)),
+        "chunk_id": "01_full_paper",
+        "translate": True,
+        "heading_block_id": None,
+    }]
+    with open(meta_path, "w", encoding="utf-8") as f:
+        _json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+
 def _pipeline(state: JobState, pdf_path: str):
     # ── STEP 1: PDF 분석 ──────────────────────────────
     _emit(state, "STEP 1", "PDF 메타데이터·레이아웃·섹션 분석 중…", 5)
@@ -121,6 +149,9 @@ def _pipeline(state: JobState, pdf_path: str):
             state.status = "failed"
             state.error = f"STEP 1 실패: {script}"
             return
+
+    # STEP 1 후 섹션 감지 검증 (폴백 안전망)
+    _verify_sections_or_fallback(state)
 
     _emit(state, "STEP 1", "PDF 분석 완료", 15)
 
