@@ -91,11 +91,19 @@ def crop_figures(pdf_path: str):
 
                 is_full_width = (x1 - x0) >= page_width * 0.6
 
-                # 캡션 매칭 시도
+                # 캡션 매칭: 현재 fig_count 번호로 캡션 매칭 시도
                 caption = ""
                 for cap_match in fig_captions:
-                    caption = cap_match.group(1).strip()
-                    break  # 첫 번째 매칭 사용
+                    cap_text = cap_match.group(1).strip()
+                    # Figure 번호 추출 (Fig 1, Figure 2, Fig. 3 등)
+                    num_match = re.search(r"[Ff]ig(?:ure)?\.?\s*(\d+)", cap_text)
+                    if num_match and int(num_match.group(1)) == fig_count:
+                        caption = cap_text
+                        break
+                if not caption and fig_captions:
+                    # 번호 매칭 실패 시 위치 기반으로 첫 미사용 캡션 사용
+                    cap_idx = (fig_count - 1) % len(fig_captions)
+                    caption = fig_captions[cap_idx].group(1).strip()
 
                 manifest["visuals"].append({
                     "id": fig_id,

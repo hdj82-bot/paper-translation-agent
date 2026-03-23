@@ -153,10 +153,15 @@ def assemble_pdf(original_pdf_path: str):
 
         blocks = page_blocks.get(page_num, [])
         visuals = page_visuals.get(page_num, [])
-        y_offset = 0  # 영역 확장으로 인한 누적 오프셋
+        # 컬럼별 y_offset 분리 (2컬럼 레이아웃 지원)
+        y_offset_by_col = {1: 0, 2: 0}
 
-        # 블록을 Y좌표 순으로 정렬
-        blocks.sort(key=lambda b: b["bbox"][1])
+        # 블록을 컬럼 우선, Y좌표 순으로 정렬 (읽기 순서 유지)
+        layout_type = metadata.get("layout_type", "1-column")
+        if layout_type == "2-column":
+            blocks.sort(key=lambda b: (b.get("column", 1), b["bbox"][1]))
+        else:
+            blocks.sort(key=lambda b: b["bbox"][1])
 
         for block in blocks:
             bbox = block["bbox"]
@@ -180,6 +185,8 @@ def assemble_pdf(original_pdf_path: str):
             extra = max(0, needed_height - original_height)
 
             # reportlab Y좌표: 페이지 하단에서 위로
+            col = block.get("column", 1)
+            y_offset = y_offset_by_col.get(col, 0)
             y_start = ph - (y0_orig + y_offset) - font_size
 
             c.setFont(ko_font_name, font_size)
@@ -193,9 +200,10 @@ def assemble_pdf(original_pdf_path: str):
                     y_start = y_pos + (i * line_height)
                 c.drawString(x0, y_pos, line)
 
-            y_offset += extra
+            y_offset_by_col[col] = y_offset_by_col.get(col, 0) + extra
 
         # 시각 요소 삽입
+        max_y_offset = max(y_offset_by_col.values()) if y_offset_by_col else 0
         for visual in visuals:
             img_path = PROJECT_ROOT / visual["image_path"]
             if not img_path.exists():
@@ -203,7 +211,7 @@ def assemble_pdf(original_pdf_path: str):
 
             vbbox = visual["bbox"]
             vx0 = vbbox[0]
-            vy0 = vbbox[1] + y_offset
+            vy0 = vbbox[1] + max_y_offset
             vw = vbbox[2] - vbbox[0]
             vh = vbbox[3] - vbbox[1]
 

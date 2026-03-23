@@ -41,6 +41,7 @@ def split_by_section():
     # 각 섹션에 블록 할당
     chunk_files = []
     total_assigned = 0
+    assigned_block_ids = set()
 
     for sec_idx, section in enumerate(sections):
         heading_id = section.get("heading_block_id")
@@ -74,15 +75,13 @@ def split_by_section():
                     "original_text": block["text"],
                 })
 
+        assigned_block_ids.update(b["id"] for b in section_blocks)
+
         # 헤딩 블록이 없는 경우 (첫 번째 섹션 등) 페이지 기반 할당
         if not section_blocks and not heading_id:
             for block in text_blocks:
                 if block["page"] in section_pages:
-                    already_assigned = any(
-                        block["id"] in [b["id"] for b in cf_blocks]
-                        for cf_blocks in [[] for _ in chunk_files]
-                    )
-                    if not already_assigned:
+                    if block["id"] not in assigned_block_ids:
                         section_blocks.append({
                             "id": block["id"],
                             "page": block["page"],
@@ -91,6 +90,7 @@ def split_by_section():
                             "font_size": block.get("font_size", 10),
                             "original_text": block["text"],
                         })
+            assigned_block_ids.update(b["id"] for b in section_blocks)
 
         chunk = {
             "chunk_id": section["chunk_id"],
