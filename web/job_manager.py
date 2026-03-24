@@ -8,6 +8,7 @@ import sys
 import threading
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -195,21 +196,33 @@ def _pipeline(state: JobState, pdf_path: str):
         state.error = "STEP 4 결과 청크 파일이 없습니다."
         return
 
-    _emit(state, "STEP 5", f"번역 시작 — 총 {len(chunk_files)}개 섹션", 38)
+    _emit(state, "STEP 5", f"번역 시작 — 총 {len(chunk_files)}개 섹션 (병렬 처리)", 38)
 
     # translator 모듈을 PROJECT_ROOT 기준으로 임포트
     sys.path.insert(0, str(PROJECT_ROOT))
     from web.translator import translate_chunk
 
     translate_count = 0
-    for i, chunk_file in enumerate(chunk_files):
-        progress = 38 + int(42 * (i / len(chunk_files)))
-        _emit(state, "STEP 5", f"번역 중: {chunk_file.stem} ({i+1}/{len(chunk_files)})", progress)
-        try:
-            translate_chunk(str(chunk_file))
-            translate_count += 1
-        except Exception as exc:
-            _emit(state, "STEP 5", f"경고: {chunk_file.stem} 번역 실패 ({exc}), 건너뜀", progress)
+    lock = threading.Lock()
+
+    # 섹션 수에 따라 최대 동시 API 호출 수 결정 (Anthropic rate limit 고려)
+    max_workers = min(len(chunk_files), 5)
+
+    def _translate_one(chunk_file):
+        translate_chunk(str(chunk_file))
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_translate_one, cf): cf for cf in chunk_files}
+        for future in as_completed(futures):
+            chunk_file = futures[future]
+            try:
+                future.result()
+                with lock:
+                    translate_count += 1
+                    progress = 38 + int(42 * (translate_count / len(chunk_files)))
+                _emit(state, "STEP 5", f"번역 완료: {chunk_file.stem} ({translate_count}/{len(chunk_files)})", progress)
+            except Exception as exc:
+                _emit(state, "STEP 5", f"경고: {chunk_file.stem} 번역 실패 ({exc}), 건너뜀", state.progress)
 
     if translate_count == 0:
         state.status = "failed"

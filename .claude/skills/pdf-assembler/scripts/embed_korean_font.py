@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -16,6 +17,88 @@ FONT_URLS = {
 }
 
 
+def extract_original_font(pdf_path: str, fonts_dir: Path) -> Path | None:
+    """원문 PDF에 임베드된 본문 폰트를 추출하여 fonts/original/ 에 저장합니다."""
+    try:
+        from pypdf import PdfReader
+        from pypdf.generic import IndirectObject
+    except ImportError:
+        return None
+
+    original_dir = fonts_dir / "original"
+    original_dir.mkdir(parents=True, exist_ok=True)
+
+    reader = PdfReader(pdf_path)
+
+    # 페이지별 폰트 사용 횟수 집계
+    font_counts: dict[str, list] = {}  # base_font_name -> [count, font_obj]
+
+    for page in reader.pages:
+        try:
+            resources = page.get("/Resources")
+            if resources is None:
+                continue
+            if isinstance(resources, IndirectObject):
+                resources = resources.get_object()
+
+            fonts = resources.get("/Font", {})
+            if isinstance(fonts, IndirectObject):
+                fonts = fonts.get_object()
+
+            for font_ref in fonts.values():
+                font_obj = font_ref.get_object() if isinstance(font_ref, IndirectObject) else font_ref
+                base_font = str(font_obj.get("/BaseFont", ""))
+                if not base_font:
+                    continue
+                if base_font not in font_counts:
+                    font_counts[base_font] = [0, font_obj]
+                font_counts[base_font][0] += 1
+        except Exception:
+            continue
+
+    if not font_counts:
+        return None
+
+    # 가장 많이 사용된 폰트 선택
+    best_name, (_, best_font) = max(font_counts.items(), key=lambda x: x[1][0])
+
+    try:
+        descriptor = best_font.get("/FontDescriptor")
+        if descriptor is None:
+            return None
+        if isinstance(descriptor, IndirectObject):
+            descriptor = descriptor.get_object()
+
+        for key, ext in [("/FontFile2", ".ttf"), ("/FontFile3", ".otf"), ("/FontFile", ".pfb")]:
+            font_stream = descriptor.get(key)
+            if not font_stream:
+                continue
+            if isinstance(font_stream, IndirectObject):
+                font_stream = font_stream.get_object()
+
+            font_data = font_stream.get_data()
+            if len(font_data) < 1000:
+                continue
+
+            # 서브셋 prefix 제거: "ABCDEF+FontName" → "FontName"
+            clean_name = best_name.lstrip("/")
+            if "+" in clean_name:
+                clean_name = clean_name.split("+", 1)[1]
+            clean_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", clean_name)
+
+            out_path = original_dir / f"{clean_name}{ext}"
+            with open(out_path, "wb") as f:
+                f.write(font_data)
+
+            print(f"[완료] 원문 폰트 추출: {clean_name}{ext} ({len(font_data):,} bytes)", file=sys.stderr)
+            return out_path
+
+    except Exception as e:
+        print(f"[경고] 원문 폰트 파일 추출 실패: {e}", file=sys.stderr)
+
+    return None
+
+
 def embed_korean_font():
     fonts_dir = PROJECT_ROOT / "fonts"
     fonts_dir.mkdir(parents=True, exist_ok=True)
@@ -23,10 +106,20 @@ def embed_korean_font():
     meta_path = get_intermediate_dir() / "layout_metadata.json"
 
     target_font = "NotoSansKR-Regular.otf"
+    metadata = {}
     if meta_path.exists():
         with open(meta_path, "r", encoding="utf-8") as f:
             metadata = json.load(f)
         target_font = metadata.get("target_font", "NotoSansKR-Regular.otf")
+
+    # 원문 PDF에서 폰트 추출 (없으면 조용히 건너뜀)
+    source_pdf = metadata.get("source_file", "")
+    if source_pdf and Path(source_pdf).exists():
+        original_font_path = extract_original_font(source_pdf, fonts_dir)
+        if original_font_path:
+            metadata["original_font_path"] = str(original_font_path)
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
 
     font_path = fonts_dir / target_font
 

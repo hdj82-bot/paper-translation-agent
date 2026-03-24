@@ -63,6 +63,20 @@ def assemble_pdf(original_pdf_path: str):
         print(f"[오류] 폰트 등록 실패: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # 원문 폰트 등록 (추출된 경우)
+    orig_font_name = None
+    orig_font_path_str = metadata.get("original_font_path", "")
+    if orig_font_path_str:
+        orig_path = Path(orig_font_path_str)
+        if orig_path.exists():
+            try:
+                orig_font_name = orig_path.stem
+                pdfmetrics.registerFont(TTFont(orig_font_name, str(orig_path)))
+                print(f"[정보] 원문 폰트 등록: {orig_font_name}", file=sys.stderr)
+            except Exception as e:
+                print(f"[경고] 원문 폰트 등록 실패 ({e}), 한국어 폰트만 사용", file=sys.stderr)
+                orig_font_name = None
+
     # 번역된 청크 로드 — 페이지 순서대로 블록 수집
     all_blocks = []  # [{"page": int, "text": str, "font_size": float, ...}]
 
@@ -103,41 +117,27 @@ def assemble_pdf(original_pdf_path: str):
     MARGIN = 25 * mm
     CONTENT_W = PAGE_W - 2 * MARGIN
 
-    normal_style = ParagraphStyle(
-        "KoNormal",
-        fontName=ko_font_name,
-        fontSize=10,
-        leading=16,
-        spaceAfter=4,
-        wordWrap="CJK",
-        alignment=TA_LEFT,
-    )
-    heading_style = ParagraphStyle(
-        "KoHeading",
-        fontName=ko_font_name,
-        fontSize=13,
-        leading=20,
-        spaceBefore=10,
-        spaceAfter=6,
-        wordWrap="CJK",
-        alignment=TA_LEFT,
-    )
-    small_style = ParagraphStyle(
-        "KoSmall",
-        fontName=ko_font_name,
-        fontSize=8,
-        leading=12,
-        spaceAfter=2,
-        wordWrap="CJK",
-        alignment=TA_LEFT,
-    )
+    _style_cache: dict = {}
 
-    def pick_style(font_size):
-        if font_size >= 13:
-            return heading_style
-        if font_size <= 8:
-            return small_style
-        return normal_style
+    def pick_style(font_size: float, is_heading: bool = False):
+        """원문 폰트 크기를 그대로 사용하는 동적 스타일 반환"""
+        fs = max(6.0, round(font_size, 1))
+        key = (fs, is_heading)
+        if key not in _style_cache:
+            leading = fs * 1.45
+            space_before = fs * 0.6 if is_heading else 0
+            space_after = fs * 0.35
+            _style_cache[key] = ParagraphStyle(
+                f"Ko_{fs}{'_h' if is_heading else ''}",
+                fontName=ko_font_name,
+                fontSize=fs,
+                leading=leading,
+                spaceBefore=space_before,
+                spaceAfter=space_after,
+                wordWrap="CJK",
+                alignment=TA_LEFT,
+            )
+        return _style_cache[key]
 
     # flowable 목록 생성
     story = []
@@ -172,7 +172,9 @@ def assemble_pdf(original_pdf_path: str):
                         print(f"[경고] 이미지 삽입 실패 ({visual['id']}): {e}", file=sys.stderr)
 
         text = block["text"]
-        style = pick_style(block["font_size"])
+        font_size = block["font_size"]
+        is_heading = font_size >= 13
+        style = pick_style(font_size, is_heading)
         # XML 특수문자 이스케이프
         safe_text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         try:

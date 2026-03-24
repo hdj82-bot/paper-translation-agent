@@ -115,8 +115,8 @@ def translate_chunk(chunk_path: str) -> dict:
 
     client = anthropic.Anthropic()
 
-    # 블록을 30개씩 배치로 나눠서 번역 (토큰 한도 초과 방지)
-    BATCH_SIZE = 30
+    # 블록을 20개씩 배치로 나눠서 번역 (응답 토큰 초과 방지)
+    BATCH_SIZE = 20
     translated_blocks = []
 
     for batch_start in range(0, len(blocks_for_translation), BATCH_SIZE):
@@ -131,7 +131,7 @@ def translate_chunk(chunk_path: str) -> dict:
 
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=8192,
+            max_tokens=16000,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
         )
@@ -139,11 +139,22 @@ def translate_chunk(chunk_path: str) -> dict:
         raw_text = response.content[0].text
         json_text = _extract_json(raw_text)
 
+        batch_translated = None
         try:
             batch_translated = json.loads(json_text)
-            translated_blocks.extend(batch_translated)
         except json.JSONDecodeError as e:
-            print(f"[경고] 배치 {batch_start//BATCH_SIZE + 1} JSON 파싱 실패: {e}\n원문 유지.", file=sys.stderr)
+            print(f"[경고] 배치 {batch_start//BATCH_SIZE + 1} JSON 파싱 실패: {e}, json_repair 시도...", file=sys.stderr)
+            try:
+                from json_repair import repair_json
+                repaired = repair_json(json_text)
+                batch_translated = json.loads(repaired)
+                print(f"[정보] json_repair 성공: {len(batch_translated)}개 블록 복구", file=sys.stderr)
+            except Exception as e2:
+                print(f"[경고] json_repair도 실패: {e2}\n원문 유지.", file=sys.stderr)
+
+        if batch_translated:
+            translated_blocks.extend(batch_translated)
+        else:
             translated_blocks.extend([
                 {**b, "translated_text": b["original_text"], "has_inline_math": False}
                 for b in batch
